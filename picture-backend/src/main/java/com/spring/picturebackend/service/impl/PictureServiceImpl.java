@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.spring.picturebackend.exception.ErrorCode;
 import com.spring.picturebackend.exception.ThrowUtils;
@@ -14,14 +15,20 @@ import com.spring.picturebackend.model.dto.picture.PictureUploadRequest;
 import com.spring.picturebackend.model.entity.Picture;
 import com.spring.picturebackend.model.entity.User;
 import com.spring.picturebackend.model.vo.PictureVO;
+import com.spring.picturebackend.model.vo.UserVO;
 import com.spring.picturebackend.service.PictureService;
 import com.spring.picturebackend.mapper.PictureMapper;
+import com.spring.picturebackend.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
 * @author 姚东名
@@ -34,6 +41,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
 
     @Resource
     private FileManager fileManager;
+
+    @Resource
+    private UserService userService;
+
 
     @Override
     public PictureVO uploadPicture(MultipartFile multipartFile, PictureUploadRequest pictureUploadRequest, User loginUser) {
@@ -129,6 +140,72 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         // 排序
         queryWrapper.orderBy(StrUtil.isNotEmpty(sortField), sortOrder.equals("ascend"), sortField);
         return queryWrapper;
+    }
+
+    @Override
+    public PictureVO getPictureVO(Picture picture, HttpServletRequest request) {
+        // 对象转封装类
+        PictureVO pictureVO = PictureVO.objToVo(picture);
+        // 关联查询用户信息 主要相对于 Picture 对象 PictureVO 对了一个 User 字段
+        Long userId = picture.getUserId();
+        if (userId != null && userId > 0) {
+            User user = userService.getById(userId);
+            UserVO userVO = userService.getUserVO(user);
+            pictureVO.setUser(userVO);
+        }
+        return pictureVO;
+    }
+
+    /**
+     * 分页获取图片封装
+     */
+    @Override
+    public Page<PictureVO> getPictureVOPage(Page<Picture> picturePage, HttpServletRequest request) {
+        // 从 picturePage 取出所有内容
+        List<Picture> pictureList = picturePage.getRecords();
+        // 构造 Page(current, size, total)
+        Page<PictureVO> pictureVOPage = new Page<>(picturePage.getCurrent(), picturePage.getSize(), picturePage.getTotal());
+        if (CollUtil.isEmpty(pictureList)) {
+            return pictureVOPage;
+        }
+        // 对象列表 pictureList -> 封装对象列表 pictureVOList
+        List<PictureVO> pictureVOList = pictureList.stream().map(PictureVO::objToVo).collect(Collectors.toList());
+        // 1. 关联查询用户信息 使用 userIdSet 进行去重，使用 userIdUserListMap<Long, List<User>> 进行映射
+        Set<Long> userIdSet = pictureList.stream().map(Picture::getUserId).collect(Collectors.toSet());
+        Map<Long, List<User>> userIdUserListMap = userService.listByIds(userIdSet).stream()
+                .collect(Collectors.groupingBy(User::getId));
+        // 2. 给 pictureVOList 填充信息 -> pictureVO 需要填充一个 User(UserVO)
+        pictureVOList.forEach(pictureVO -> {
+            Long userId = pictureVO.getUserId();
+            User user = null;
+            if (userIdUserListMap.containsKey(userId)) {
+                user = userIdUserListMap.get(userId).get(0);
+            }
+            pictureVO.setUser(userService.getUserVO(user));
+        });
+        // 最终返回 pictureVOPage (先 setRecords)
+        pictureVOPage.setRecords(pictureVOList);
+        return pictureVOPage;
+    }
+
+    @Override
+    public void validPicture(Picture picture) {
+        // 校验
+        ThrowUtils.throwIf(picture == null, ErrorCode.PARAMS_ERROR);
+        // 从对象中取值
+        Long id = picture.getId();
+        String url = picture.getUrl();
+        String introduction = picture.getIntroduction();
+        // 修改数据时，id 不能为空，有参数则校验
+        ThrowUtils.throwIf(ObjUtil.isNull(id), ErrorCode.PARAMS_ERROR, "id 不能为空");
+        // url 过长 1024
+        if (StrUtil.isNotBlank(url)) {
+            ThrowUtils.throwIf(url.length() > 1024, ErrorCode.PARAMS_ERROR, "url 过长");
+        }
+        // 简介过长 800
+        if (StrUtil.isNotBlank(introduction)) {
+            ThrowUtils.throwIf(introduction.length() > 800, ErrorCode.PARAMS_ERROR, "简介过长");
+        }
     }
 
 }
