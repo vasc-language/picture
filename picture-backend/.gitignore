@@ -5,6 +5,7 @@ target/
 
 ### Custom ###
 application-local.yml
+*.md
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
