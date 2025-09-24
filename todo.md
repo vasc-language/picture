@@ -1,5 +1,13 @@
 # TODO
 
+- [x] 核对 PictureServiceImpl 非管理员审核逻辑并确认需要重置的审核字段
+- [x] 更新 fillReviewParams 清空 reviewMessage / reviewerId / reviewTime 并允许空值更新
+- [x] 在 todo.md 记录本次修复思路与 review 摘要
+- [x] 说明测试执行情况（未运行自动化测试，建议补充回归）
+- [x] 通读 picture-frontend 关键视图（Home / Add / Manage / Detail 等）评估审核流程相关实现
+- [x] 分析图片审核前端逻辑是否存在导致功能失效的严重缺陷
+- [x] 在 todo.md 记录前端巡检结论与后续建议
+
 - [x] 分析 `tslib` 缺失问题并确认修复方案
 - [x] 在 `package.json` 添加 `tslib` 依赖并同步锁文件
 - [x] 运行 `npm run openapi` 验证命令通过
@@ -36,6 +44,19 @@
 - 用户在 `editPicture` 接口提交修改时调用 `fillReviewParams`，确保非管理员内容重回审核流程
 - 保持管理员编辑时的自动过审逻辑一致
 - 仅改动控制层逻辑，未执行自动化测试（建议补充回归）
+
+## Review（重置审核字段）
+
+- 非管理员编辑图片时将审核状态重置为待审核，同时清空 `reviewMessage` / `reviewerId` / `reviewTime`
+- 为审核元数据字段新增 `updateStrategy = FieldStrategy.IGNORED`，确保 `updateById` 可写入空值
+- 未运行自动化测试（后续可补充回归）
+
+## Review（前端审核流程巡检）
+
+- 主页、上传、详情及管理页数据流与审核接口对接正常，未发现阻断审核流程的严重缺陷
+- 管理端筛选使用的审核状态下拉以字符串值传参，Jackson 会自动转换为整数，不影响过滤逻辑
+- 管理端审核信息仍显示 `reviewerId` 裸 ID，体验欠佳但不影响审核功能
+- 未执行前端构建或自动化测试，后续可按需补充 `npm run build` / `npm run type-check`
 - [ ] 确认当前分支与远程状态
 - [ ] 整理并提交本次修改
 - [ ] 推送至 GitHub 远程仓库

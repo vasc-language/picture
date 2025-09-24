@@ -268,6 +268,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         } else {
             // 非管理员，创建或编辑都要改为待审核
             picture.setReviewStatus(PictureReviewStatusEnum.REVIEWING.getValue());
+            picture.setReviewMessage(null);
+            picture.setReviewerId(null);
+            picture.setReviewTime(null);
         }
     }
 }

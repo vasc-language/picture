@@ -78,16 +78,19 @@ public class Picture implements Serializable {
     /**
      * 审核信息
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private String reviewMessage;
 
     /**
      * 审核人 id
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private Long reviewerId;
 
     /**
      * 审核时间
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private Date reviewTime;
 
 
