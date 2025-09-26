@@ -9,7 +9,9 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.spring.picturebackend.exception.BusinessException;
 import com.spring.picturebackend.exception.ErrorCode;
 import com.spring.picturebackend.exception.ThrowUtils;
-import com.spring.picturebackend.manager.FileManager;
+import com.spring.picturebackend.manager.upload.FilePictureUpload;
+import com.spring.picturebackend.manager.upload.PictureUploadTemplate;
+import com.spring.picturebackend.manager.upload.UrlPictureUpload;
 import com.spring.picturebackend.model.dto.file.UploadPictureResult;
 import com.spring.picturebackend.model.dto.picture.PictureQueryRequest;
 import com.spring.picturebackend.model.dto.picture.PictureReviewRequest;
@@ -24,7 +26,6 @@ import com.spring.picturebackend.mapper.PictureMapper;
 import com.spring.picturebackend.service.UserService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
@@ -44,15 +45,20 @@ import java.util.stream.Collectors;
 public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         implements PictureService {
 
+//    @Resource
+//    private FileManager fileManager;
     @Resource
-    private FileManager fileManager;
+    private FilePictureUpload filePictureUpload;
+
+    @Resource
+    private UrlPictureUpload urlPictureUpload;
 
     @Resource
     private UserService userService;
 
 
     @Override
-    public PictureVO uploadPicture(MultipartFile multipartFile, PictureUploadRequest pictureUploadRequest, User loginUser) {
+    public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
         // 用于判断是新增还是更新图片
         Long pictureId = null;
@@ -77,7 +83,13 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         // 上传图片，得到信息
         // 按照用户 id 划分目录
         String uploadPathPrefix = String.format("public/%s", loginUser.getId());
-        UploadPictureResult uploadPictureResult = fileManager.uploadPicture(multipartFile, uploadPathPrefix);
+        // 根据 inputSource 类型区分上传方式（默认使用 图片上传）
+        PictureUploadTemplate pictureUploadTemplate = filePictureUpload;
+        // 如果 inputSource 是 String 类型的，毫无疑问的，就是用 URL 上传的
+        if (inputSource instanceof String) {
+            pictureUploadTemplate = urlPictureUpload;
+        }
+        UploadPictureResult uploadPictureResult = pictureUploadTemplate.uploadPicture(inputSource, uploadPathPrefix);
         // 构造要入库的图片信息
         Picture picture = getPicture(loginUser, uploadPictureResult, pictureId);
         // 补充审核参数

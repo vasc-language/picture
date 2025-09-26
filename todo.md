@@ -60,3 +60,35 @@
 - [ ] 确认当前分支与远程状态
 - [ ] 整理并提交本次修改
 - [ ] 推送至 GitHub 远程仓库
+
+## Review（URL 下载安全问题）
+- [x] 排查 `UrlPictureUpload` 下载实现，确认基于 `HttpUtil.downloadFile` 的处理流程
+- [x] 识别未做主机校验导致的 SSRF 风险，以及缺乏有效的响应体大小约束
+- [x] 建议引入 URL 白名单 / 内网阻断策略，并根据 `Content-Length` 或流式读取设置下载上限
+
+    - UrlPictureUpload.processFile 在 picture-backend/src/main/java/com/spring/picturebackend/manager/upload/
+      UrlPictureUpload.java:37 直接对用户输入的任意 URL 调用 HttpUtil.downloadFile，未做域名/IP 白名单或内网网段拦
+      截；攻击者可借此让服务器主动访问内网服务（如 http://127.0.0.1:8080/actuator、http://169.254.169.254/latest/meta-
+      data/），这属于典型 SSRF 高危漏洞。
+    - validPicture 的校验不足（UrlPictureUpload.java:57 起）：
+        - 只校验协议与基本头信息，未阻断内网地址；
+        - HEAD 返回非 200 时直接 return，等于跳过所有限制仍执行下载；
+        - 若响应缺少 Content-Length，2MB 限制失效，可被诱导下载超大文件导致磁盘或流量爆炸。
+
+  修复建议
+
+    1. 建立允许列表或解析 IP 后拒绝私有网段/本机地址；对跳转后的最终地址也要重复校验。
+    2. 使用带限速/限长的流式下载，实时统计已读字节并在超过阈值时终止。
+    3. HEAD 失败应直接抛错，禁止继续 GET；同时配置合理的连接/读取超时时间并限制重定向次数。
+    4. 视安全需求增加文件类型白名单的实际内容检测（如读取文件头校验）。
+- [x] 复核 `validPicture` 在 HEAD 非 200 时直接返回的问题
+- [x] 说明未限制内网主机与缺少实际下载大小限制的风险
+
+- [x] 校验 URL 主机解析到内网 / 环回地址时直接拦截
+- [x] HEAD 非 200 时抛错，避免绕过校验
+- [x] 要求 `Content-Length` 存在且不超过 2MB
+
+## Review（URL 校验优化）
+- 强化 `UrlPictureUpload.validPicture`，拦截内网主机、HEAD 非 200 与缺失大小信息
+- HEAD 校验强制 200 成功后才继续下载，避免安全校验被绕过
+- 未新增自动化测试（仅调整后端参数校验，建议后续补充针对 URL 上传路径的集成测试）
