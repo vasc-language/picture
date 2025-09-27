@@ -52,8 +52,11 @@ public abstract class PictureUploadTemplate {
         } catch (IOException e) {
             log.error("图片上传对象存储失败", e);
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "图片上传失败");
+        } finally {
+            // 7. 将临时文件清除
+            this.deleteTemplate(file);
         }
-        // 7. 将临时文件清除
+
     }
 
     /**

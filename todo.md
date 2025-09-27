@@ -92,3 +92,9 @@
 - 强化 `UrlPictureUpload.validPicture`，拦截内网主机、HEAD 非 200 与缺失大小信息
 - HEAD 校验强制 200 成功后才继续下载，避免安全校验被绕过
 - 未新增自动化测试（仅调整后端参数校验，建议后续补充针对 URL 上传路径的集成测试）
+
+## Review（临时文件清理确认）
+
+- [x] 检查 `PictureUploadTemplate.uploadPicture` 是否始终在 `finally` 调用 `deleteTemplate`
+- [x] 视检查结果决定是否需要补充清理逻辑
+- [x] 在本文件 Review 小结中记录确认结论：当前实现已在 `finally` 调用 `deleteTemplate(file)`，上传流程会在返回前清理临时文件，无需额外改动
