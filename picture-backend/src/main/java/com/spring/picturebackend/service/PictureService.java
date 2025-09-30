@@ -103,8 +103,10 @@ public interface PictureService extends IService<Picture> {
     );
 
     /**
-     * 清理图片列表缓存
+     * 清理图片列表缓存（包含本地缓存和 Redis 缓存）
+     *
+     * @param localCache 本地缓存实例
      */
-    void clearPictureCache();
+    void clearPictureCache(com.github.benmanes.caffeine.cache.Cache<String, String> localCache);
 
 }

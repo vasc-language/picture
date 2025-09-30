@@ -28,12 +28,15 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -360,11 +363,39 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
     }
 
     @Override
-    public void clearPictureCache() {
-        Set<String> keys = stringRedisTemplate.keys("picture:listPictureVOByPage:*");
-        if (keys != null && !keys.isEmpty()) {
-            stringRedisTemplate.delete(keys);
-            log.info("已清理图片列表缓存，共 {} 条", keys.size());
+    public void clearPictureCache(com.github.benmanes.caffeine.cache.Cache<String, String> localCache) {
+        // 1. 清理本地缓存（Caffeine）
+        if (localCache != null) {
+            long beforeSize = localCache.estimatedSize();
+            localCache.invalidateAll();
+            log.info("已清理本地缓存，约 {} 条", beforeSize);
+        }
+
+        // 2. 清理 Redis 缓存（使用 SCAN 替代 KEYS 命令，避免阻塞）
+        String pattern = "picture:listPictureVOByPage:*";
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+
+        List<String> keysToDelete = new ArrayList<>();
+        int totalDeleted = 0;
+
+        try (Cursor<String> cursor = stringRedisTemplate.scan(options)) {
+            while (cursor.hasNext()) {
+                keysToDelete.add(cursor.next());
+                // 批量删除，每100个key删一次
+                if (keysToDelete.size() >= 100) {
+                    stringRedisTemplate.delete(keysToDelete);
+                    totalDeleted += keysToDelete.size();
+                    keysToDelete.clear();
+                }
+            }
+            // 删除剩余的key
+            if (!keysToDelete.isEmpty()) {
+                stringRedisTemplate.delete(keysToDelete);
+                totalDeleted += keysToDelete.size();
+            }
+            log.info("已清理 Redis 缓存，共 {} 条", totalDeleted);
+        } catch (Exception e) {
+            log.error("清理 Redis 缓存失败", e);
         }
     }
 }

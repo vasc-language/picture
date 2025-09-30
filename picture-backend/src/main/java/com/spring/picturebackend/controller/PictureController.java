@@ -1,8 +1,11 @@
 package com.spring.picturebackend.controller;
 
+import cn.hutool.core.lang.TypeReference;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.spring.picturebackend.annotation.AuthCheck;
 import com.spring.picturebackend.common.BaseResponse;
 import com.spring.picturebackend.common.DeleteRequest;
@@ -54,6 +57,23 @@ public class PictureController {
     @Resource
     private StringRedisTemplate stringRedisTemplate; // 项目和 redis 交互的封装类
 
+    private final Cache<String, String> LOCAL_CACHE =
+            Caffeine.newBuilder().initialCapacity(1024)
+                    .maximumSize(10000L)
+                    // 缓存 5 分钟移除
+                    .expireAfterWrite(5L, TimeUnit.MINUTES)
+                    // 启用统计功能
+                    .recordStats()
+                    .build();
+
+    /**
+     * 获取本地缓存实例（供 Service 层清理使用）
+     */
+    public Cache<String, String> getLocalCache() {
+        return LOCAL_CACHE;
+    }
+
+
 
     /**
      * 上传图片（可重新上传）
@@ -88,8 +108,8 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.removeById(id);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        // 清理缓存
-        pictureService.clearPictureCache();
+        // 清理缓存（包含本地缓存）
+        pictureService.clearPictureCache(LOCAL_CACHE);
         return ResultUtils.success(true);
     }
 
@@ -120,8 +140,8 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        // 清理缓存
-        pictureService.clearPictureCache();
+        // 清理缓存（包含本地缓存）
+        pictureService.clearPictureCache(LOCAL_CACHE);
         return ResultUtils.success(true);
     }
 
@@ -203,15 +223,25 @@ public class PictureController {
         String hashKey = DigestUtils.md5DigestAsHex(queryCondition.getBytes());
         // 构建唯一的 redisKey
         String redisKey = "picture:listPictureVOByPage:" + hashKey;
-        // 从 redis 缓存中查询
-        ValueOperations<String, String> valueOperations = stringRedisTemplate.opsForValue();
-        String cachedValue = valueOperations.get(redisKey); // 查询到的数据
+        // 使用二级缓存：先从本地缓存中查，没有再从 redis 缓存中查，最后从数据库中查
+        // 1. 查询本地缓存（Caffeine）
+        String cachedValue = LOCAL_CACHE.getIfPresent(redisKey);
         if (cachedValue != null) {
             // 进行反序列化，使用正确的泛型类型
-            Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, new cn.hutool.core.lang.TypeReference<Page<PictureVO>>() {}, false);
+            Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, new TypeReference<Page<PictureVO>>() {}, false);
             return ResultUtils.success(cachedPage);
         }
-        // 查询数据库（当缓存中没有该数据时，从数据库中查找）
+        // 2. 从 redis 缓存中查询
+        ValueOperations<String, String> valueOperations = stringRedisTemplate.opsForValue();
+        cachedValue = valueOperations.get(redisKey); // 查询到的数据
+        if (cachedValue != null) {
+            // 将从 redis 缓存中的内容写回本地缓存中
+            LOCAL_CACHE.put(redisKey, cachedValue);
+            // 进行反序列化，使用正确的泛型类型
+            Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, new TypeReference<Page<PictureVO>>() {}, false);
+            return ResultUtils.success(cachedPage);
+        }
+        // 3. 查询数据库（当缓存中没有该数据时，从数据库中查找）
         Page<Picture> picturePage = pictureService.page(new Page<>(current, size),
                 pictureService.getQueryWrapper(pictureQueryRequest));
         // 查找完之后，将查找后的内容写入 redis 缓存中
@@ -219,7 +249,10 @@ public class PictureController {
         Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage, request);
         // 序列化
         String cacheValue = JSONUtil.toJsonStr(pictureVOPage);
-        // 防止雪崩，将过期时间设置为 5~10分钟内
+        // 4， 更新缓存
+        // 更新本地缓存
+        LOCAL_CACHE.put(redisKey, cacheValue);
+        // 更新 redis 缓存。防止雪崩，将过期时间设置为 5~10分钟内
         int cacheExpiredTime = 300 + RandomUtil.randomInt(0, 300);
         // 防止缓存穿透，空结果也缓存（但时间较短）
         if (pictureVOPage.getRecords().isEmpty()) {
@@ -261,8 +294,8 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        // 清理缓存
-        pictureService.clearPictureCache();
+        // 清理缓存（包含本地缓存）
+        pictureService.clearPictureCache(LOCAL_CACHE);
         return ResultUtils.success(true);
     }
 
@@ -283,8 +316,8 @@ public class PictureController {
         ThrowUtils.throwIf(pictureReviewRequest == null, ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(request);
         pictureService.doPictureReview(pictureReviewRequest, loginUser);
-        // 清理缓存
-        pictureService.clearPictureCache();
+        // 清理缓存（包含本地缓存）
+        pictureService.clearPictureCache(LOCAL_CACHE);
         return ResultUtils.success(true);
     }
 
