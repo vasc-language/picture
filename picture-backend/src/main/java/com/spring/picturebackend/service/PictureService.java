@@ -102,4 +102,9 @@ public interface PictureService extends IService<Picture> {
             User loginUser
     );
 
+    /**
+     * 清理图片列表缓存
+     */
+    void clearPictureCache();
+
 }
